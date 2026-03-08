@@ -22,7 +22,7 @@ Handle Knods chat turns that request new flows or edits on a visual canvas. Pars
 1. Parse incoming payload fields.
 - Treat `message` as the primary request.
 - Use `history` for continuity.
-- On first turn in a conversation, expect prepended context in `message` describing node types and action rules.
+- On first turn in a conversation, expect prepended context in `message` describing node types and action rules. **Always prefer the node catalog from this context over the defaults below.**
 - Use `messageId` to map all response chunks to the correct message.
 
 2. Choose whether to emit a canvas action block.
@@ -32,12 +32,13 @@ Handle Knods chat turns that request new flows or edits on a visual canvas. Pars
 
 3. Build strict action JSON.
 - Wrap each action exactly as:
-  - `[KNODS_ACTION]{"action":"addNode",...}[/KNODS_ACTION]`
-  - `[KNODS_ACTION]{"action":"addFlow",...}[/KNODS_ACTION]`
+  - `[KNODS_ACTION]{"action":"addNode","nodeType":"FluxImage"}[/KNODS_ACTION]`
+  - `[KNODS_ACTION]{"action":"addFlow","nodes":[...],"edges":[...]}[/KNODS_ACTION]`
+- Use `"nodeType"` (not `"type"`) in node objects. Do NOT include `position` or `data` fields — Knods handles layout automatically.
 - For `addFlow`, ensure every edge `source` and `target` references an existing node id.
 - Always end flows with an `Output` node.
-- Never connect two generator nodes directly; route through `Output` or through appropriate input/output structure.
-- Use stable node IDs (for example `input_1`, `image_1`, `output_1`) so follow-up edits are easy.
+- Never connect two generator nodes directly; route through `Output`.
+- Use stable node IDs (for example `n1`, `n2`, `n3`) so follow-up edits are easy.
 - Avoid unknown keys in action JSON.
 
 4. Stream response back to Knods.
@@ -52,14 +53,96 @@ Handle Knods chat turns that request new flows or edits on a visual canvas. Pars
 - Do not mention internal polling URLs/tokens in user-facing text.
 - Keep action JSON valid and compact.
 
-## Flow Design Heuristics
+## Node Catalog
 
-- Build the smallest flow that satisfies the request.
-- Prefer node types listed in the first-message context when provided.
-- Default catalog (when context is absent): `ChatGPT`, `Claude`, `Gemini`, `GPTImage`, `FluxImage`, `FalAIImage`, `Veo31Video`, `WanAnimate`, `TextInput`, `ImagePanel`, `Dictation`, `Output`.
-- Add `initialData` only when user intent clearly implies parameters.
-- If one generator must feed another, route through `Output`.
-- When node catalog is unknown, make a best-effort choice and clearly state assumptions.
+**IMPORTANT:** Every generator node listed below has a built-in prompt textarea. Do NOT add a DocumentPanel before a single generator — just connect the generator directly to an Output. Only use DocumentPanel when one shared prompt feeds multiple generators in parallel.
+
+When the first message includes a node catalog context, **always use that list** over these defaults. The context catalog is always more up-to-date.
+
+### Text Generators (output: text)
+All text generators accept text + image input and have a built-in prompt textarea.
+- `ChatGPT` — OpenAI models. Best all-rounder.
+- `Claude` — Anthropic models. Great for reasoning and creative writing.
+
+### Image Generators (output: image)
+All image generators have a built-in prompt textarea and accept optional image input for image-to-image editing.
+- `GPTImage` — OpenAI. Best at following complex instructions and text rendering.
+- `FluxImage` — FLUX by Black Forest Labs. Industry-leading quality for portraits and artistic styles. Fast.
+- `ImagePrompt` — Google Gemini. Great for photorealistic images and concept art.
+- `ZImageTurbo` — Lightning-fast (<2 seconds). Best for rapid prototyping.
+- `QwenImage` — Alibaba Qwen. Strong at anime, illustrations, and Asian-inspired aesthetics.
+- `Seedream` — ByteDance. Dreamy, surreal compositions. Good at text rendering in images.
+- `GrokImage` — xAI. Text-to-image and image editing.
+
+### Video Generators (output: video)
+All video generators below have a built-in prompt textarea and support both text-to-video and image-to-video (connect an ImagePanel for image-to-video).
+- `Veo3FalAI` — Google Veo 3.1. Cinematic video up to 8s with native audio. Best overall quality.
+- `Sora2Video` — OpenAI Sora 2. Realistic motion and physics, up to 12s.
+- `Kling26Video` — Kling 2.6 Surreal Engine. Cinematic with audio, up to 10s.
+- `KlingO3Video` — Kling 3.0. Latest generation, Standard/Pro quality, up to 10s.
+- `Wan26Video` — Wan 2.6. Multi-shot videos, 720p/1080p, up to 15s.
+- `LTXVideo` — LTX-2 Pro. High-fidelity cinematic with synchronized audio.
+- `GrokVideo` — xAI. Video with native audio.
+
+### Special Video Node
+- `WanAnimateVideo` — Character animation. **REQUIRES two inputs**: a VIDEO (motion reference) + an IMAGE (character to animate). Does NOT have a text prompt. Only use when user wants to animate a character image using motion from another video.
+
+### Input/Container Nodes
+- `ImagePanel` — Upload or paste an image. Output: image. Use when user wants to provide a reference image or a starting frame for image-to-video.
+- `DocumentPanel` — Editable text container. Output: text. Use ONLY when one shared prompt feeds multiple generators in parallel.
+- `Output` — Displays generated results (text, image, video). REQUIRED at the end of every flow.
+
+## Flow Design Rules
+
+1. **Every generator has a built-in prompt textarea.** Never prepend a DocumentPanel to a single generator.
+2. **Use DocumentPanel only** for one shared prompt feeding multiple generators in parallel.
+3. **Use ImagePanel** when user wants to provide a reference image, a starting frame for video, or an image input for WanAnimateVideo.
+4. **Always end flows with an Output node.**
+5. **Never connect two generators directly.** Route through an Output node if chaining.
+6. **Flows go left to right:** inputs → generators → Output.
+7. **Use EXACT PascalCase node names** from the catalog. Do NOT invent node names.
+8. **WanAnimateVideo** is the only node that requires a video input. Only suggest it when the user specifically wants to animate a character image using motion from a video.
+9. Add `initialData` only when user intent clearly implies parameters.
+10. Build the smallest flow that satisfies the request.
+
+## Flow Examples
+
+Single image generator (most common):
+```
+FluxImage → Output
+```
+
+Image from reference photo:
+```
+ImagePanel → GPTImage → Output
+```
+
+One prompt feeding two image generators:
+```
+DocumentPanel → FluxImage → Output
+DocumentPanel → GPTImage → Output
+```
+
+Text-to-video:
+```
+Veo3FalAI → Output
+```
+
+Image-to-video (animate a still image):
+```
+ImagePanel → Veo3FalAI → Output
+```
+
+Character animation from video motion (WanAnimateVideo needs both video + image):
+```
+ImagePanel → WanAnimateVideo → Output
+[video source] → WanAnimateVideo
+```
+
+Text generation:
+```
+ChatGPT → Output
+```
 
 ## Gateway Behavior Constraints
 
