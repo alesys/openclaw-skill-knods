@@ -1,6 +1,14 @@
 ---
 name: knods
 description: Build and modify Knods visual AI workflows using the OpenClaw Gateway polling protocol. Use when Knods sends polling payloads with fields like messageId/message/history and responses must be streamed back as delta chunks with optional [KNODS_ACTION] JSON blocks in assistant text. Includes a packaged bridge runtime and installer for persistent polling.
+metadata:
+  openclaw:
+    emoji: "🔌"
+    homepage: "https://github.com/alesys/openclaw-skill-knods"
+    os: ["linux"]
+    requires:
+      bins: ["python3", "bash", "openclaw", "systemctl"]
+      env: ["KNODS_BASE_URL"]
 ---
 
 # Knods
