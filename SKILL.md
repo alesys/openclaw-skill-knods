@@ -1,6 +1,6 @@
 ---
 name: knods
-description: Build and modify Knods visual AI workflows using the OpenClaw Gateway polling protocol. Use when Knods sends polling payloads with fields like messageId/message/history and responses must be streamed back as delta chunks with optional [KNODS_ACTION] JSON blocks in assistant text. Includes a packaged bridge runtime and installer for persistent polling.
+description: Build and modify Knods visual AI workflows using either the OpenClaw Gateway polling protocol or the Knods headless flows API. Use for Knods polling payloads with fields like messageId/message/history, or for direct flow discovery/execution tasks like listing flows, reading input schemas, starting runs, polling status, cancelling runs, and retrieving outputs programmatically.
 metadata:
   openclaw:
     emoji: "🔌"
@@ -15,9 +15,28 @@ metadata:
 
 ## Overview
 
-Handle Knods chat turns that request new flows or edits on a visual canvas. Parse Knods polling payload messages, generate assistant text, and include `[KNODS_ACTION]...[/KNODS_ACTION]` blocks when the canvas should change.
+Handle two Knods modes:
+
+1. Interactive canvas chat via the polling gateway
+2. Headless flow execution via the REST API
+
+Use the polling bridge for Knods Iris/chat payloads. Use the headless API when the task is to discover a flow, inspect inputs, run it, wait, cancel, or fetch outputs programmatically.
+
+## Mode Selection
+
+- Use **polling gateway mode** when input arrives as a Knods chat envelope with `messageId`, `message`, and `history`, and the response must stream back with optional `[KNODS_ACTION]...[/KNODS_ACTION]`.
+- Use **headless API mode** when the user wants to:
+  - list flows
+  - search flows by name/description
+  - inspect a flow's input schema
+  - start a run
+  - poll until completion
+  - cancel a run
+  - retrieve outputs programmatically
 
 ## Workflow
+
+### A. Polling Gateway Flow
 
 1. Parse incoming payload fields.
 - Treat `message` as the primary request.
@@ -45,6 +64,34 @@ Handle Knods chat turns that request new flows or edits on a visual canvas. Pars
 - Send assistant text as delta chunks to `/respond` for the same `messageId`.
 - Send `{"messageId":"...","done":true}` when complete.
 - Keep first chunk quick to avoid timeout perception.
+
+### B. Headless API Flow
+
+1. Discover candidate flows.
+- Run:
+  - `python3 {baseDir}/scripts/knods_headless.py list`
+  - or `python3 {baseDir}/scripts/knods_headless.py resolve --query "<text>"`
+
+2. Inspect the selected flow.
+- Run:
+  - `python3 {baseDir}/scripts/knods_headless.py get --flow-id "<flowId>"`
+- Read `inputs` and preserve every `nodeId` exactly.
+
+3. Start a run.
+- Build `inputs` as JSON array with `nodeId`, `content`, and `type`.
+- Run:
+  - `python3 {baseDir}/scripts/knods_headless.py run --flow-id "<flowId>" --inputs-json '[...]'`
+
+4. Poll until terminal state.
+- Prefer:
+  - `python3 {baseDir}/scripts/knods_headless.py wait --run-id "<runId>"`
+- Or use:
+  - `python3 {baseDir}/scripts/knods_headless.py run-wait --flow-id "<flowId>" --inputs-json '[...]'`
+
+5. Handle result.
+- On `completed`, read `outputs`
+- On `failed`, surface `error.message` and `error.nodeId` if present
+- On timeout, optionally cancel the run
 
 ## Output Rules
 
@@ -161,11 +208,19 @@ When running a persistent poller service/process:
 - Derive `/respond` from the same connection root as `/updates`.
 - Log handled `messageId` values and transport errors for debugging.
 
+For headless API operations:
+
+- Prefer `KNODS_API_BASE_URL` + `KNODS_API_KEY`
+- `KNODS_API_BASE_URL` should look like `https://<instance>/api/v1`
+- `KNODS_API_KEY` must have `knods:read` and `knods:run`
+- If the API base URL is omitted, the packaged client can derive it from the same host as `KNODS_BASE_URL`
+
 ### Packaged Runtime (required)
 
 This skill ships the runtime bridge and installer:
 
 - `scripts/knods_iris_bridge.py`
+- `scripts/knods_headless.py`
 - `scripts/install_local.sh`
 
 Install/deploy from the skill folder:
@@ -188,10 +243,14 @@ Then runs:
 
 Set these in `~/.openclaw/.env`:
 
-- Required:
+- Required for polling gateway mode:
   - `KNODS_BASE_URL`
 - Required when `KNODS_BASE_URL` does not already include `?token=...`:
   - `KNODS_GATEWAY_TOKEN`
+- Required for headless API mode:
+  - `KNODS_API_KEY`
+- Preferred for headless API mode:
+  - `KNODS_API_BASE_URL`
 - Optional:
   - `OPENCLAW_AGENT_ID` (default: `iris`)
   - `OPENCLAW_BIN` (default: `openclaw` on `PATH`)
@@ -219,4 +278,5 @@ Do not assume env changes are picked up live without restart.
 
 ## Reference
 
-Read `references/protocol.md` for canonical polling endpoints, payload schemas, and action examples.
+- Read `references/protocol.md` for canonical polling endpoints, payload schemas, and action examples.
+- Read `references/headless-api.md` for the direct run/list/poll/cancel flow execution API.
