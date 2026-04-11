@@ -28,11 +28,10 @@ Wants=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=$HOME
-EnvironmentFile=$ENV_FILE
 Environment=PYTHONUNBUFFERED=1
 Environment=PATH=$HOME/.npm-global/bin:$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin
 Environment=OPENCLAW_BIN=$OPENCLAW_BIN_DETECTED
-ExecStart=/usr/bin/python3 $BRIDGE_DST
+ExecStart=/bin/bash -lc 'source "$ENV_FILE" >/dev/null 2>&1 && exec /usr/bin/python3 "$BRIDGE_DST"'
 Restart=always
 RestartSec=2
 
@@ -54,3 +53,9 @@ echo "Optional when URL has no token:"
 echo "  KNODS_GATEWAY_TOKEN=gw_..."
 echo "Optional agent override:"
 echo "  OPENCLAW_AGENT_ID=iris"
+echo
+echo "Important:"
+echo "  - This installer creates a single global service: $SERVICE_NAME"
+echo "  - Use it only when this bridge should own the shared/global Knods route"
+echo "  - For workspace-scoped agents, create a dedicated service that sources that workspace .env"
+echo "  - This ExecStart uses 'source' so .env files with 'export VAR=...' lines work correctly"

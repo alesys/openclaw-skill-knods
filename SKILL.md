@@ -255,6 +255,16 @@ Set these in `~/.openclaw/.env`:
   - `OPENCLAW_AGENT_ID` (default: `iris`)
   - `OPENCLAW_BIN` (default: `openclaw` on `PATH`)
 
+### Workspace-Scoped Deployment Rule
+
+- The packaged installer creates a single global service: `knods-iris-bridge.service`.
+- Do not reuse that global service for another workspace agent such as Maya, Ana, or Iris if they need different gateway URLs, tokens, or agent ids.
+- For workspace-scoped deployments, create a dedicated systemd user unit per agent, for example `knods-maya-bridge.service`, with:
+  - `WorkingDirectory` set to the workspace
+  - `ExecStart=/bin/bash -lc 'source /path/to/workspace/.env >/dev/null 2>&1 && exec /usr/bin/python3 /path/to/knods_iris_bridge.py'`
+- Avoid `EnvironmentFile=` when your `.env` contains shell syntax such as `export VAR=...`; systemd ignores those assignments.
+- If a workspace-local `.env` is used, ensure it sets `OPENCLAW_AGENT_ID` explicitly so the bridge does not default to `iris`.
+
 ### Service Operations
 
 - Status:
